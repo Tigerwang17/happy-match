@@ -564,14 +564,9 @@
             }
         }
         for (const { cells } of byLength[3]) {
-          let add = true;
-          for (const { r, c } of cells) {
-            if (allToRemove.has(`${r},${c}`)) { add = false; break; }
-          }
-          if (add) {
-            cells.forEach(({ r, c }) => allToRemove.add(`${r},${c}`));
-            points += SCORE_3;
-          }
+          const alreadyCovered = cells.every(({ r, c }) => allToRemove.has(`${r},${c}`));
+          cells.forEach(({ r, c }) => allToRemove.add(`${r},${c}`));
+          if (!alreadyCovered) points += SCORE_3;
         }
 
         const mult = Math.pow(COMBO_MULTIPLIER, combo);
@@ -618,6 +613,7 @@
       }
 
       function showBombEffect(pigCell) {
+        playBombVoice();
         const cellEl = getCellEl(pigCell.r, pigCell.c);
         if (cellEl) {
           const cellRect = cellEl.getBoundingClientRect();
@@ -742,6 +738,41 @@
           speechSynthesis.speak(u);
         } catch (e) {}
       }
+      function playBombVoice() {
+        try {
+          const u = new SpeechSynthesisUtterance('OH, my god');
+          u.lang = 'en-US';
+          u.rate = 0.85;
+          u.pitch = 1;
+          speechSynthesis.speak(u);
+        } catch (e) {}
+      }
+      function playApplause() {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+          const numClaps = 8;
+          const interval = 120;
+          for (let i = 0; i < numClaps; i++) {
+            setTimeout(() => {
+              try {
+                const buf = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+                const data = buf.getChannelData(0);
+                for (let j = 0; j < data.length; j++) data[j] = (Math.random() * 2 - 1) * (1 - j / data.length);
+                const src = ctx.createBufferSource();
+                src.buffer = buf;
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0.25, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.04);
+                src.connect(gain);
+                gain.connect(ctx.destination);
+                src.start(ctx.currentTime);
+                src.stop(ctx.currentTime + 0.04);
+              } catch (e) {}
+            }, i * interval);
+          }
+        } catch (e) {}
+      }
 
       function updateCell(r, c) {
         const el = getCellEl(r, c);
@@ -764,6 +795,7 @@
         if (score >= target) {
           gameEnded = true;
           addScore(0);
+          playApplause();
           showConfetti();
           showWinLeaderboard();
           document.getElementById('winMessage').textContent = '本关目标 ' + target + ' 分已达成！';
