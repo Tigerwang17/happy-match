@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happy Match for Claudia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --grid-size: 8;
+      --tile-size: clamp(36px, 5.5vw, 56px);
+      --gap: 4px;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Fredoka', sans-serif; overflow-x: hidden; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, var(--tile-size));
+      grid-template-rows: repeat(8, var(--tile-size));
+      gap: var(--gap);
+      min-width: calc(8 * var(--tile-size) + 7 * var(--gap));
+      min-height: calc(8 * var(--tile-size) + 7 * var(--gap));
+    }
+    .tile {
+      width: var(--tile-size);
+      height: var(--tile-size);
+      min-width: var(--tile-size);
+      min-height: var(--tile-size);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: calc(var(--tile-size) * 0.6);
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+      color: #1f2937;
+    }
+    .tile:hover { transform: scale(1.08); box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
+    .tile.selected { transform: scale(1.12); box-shadow: 0 0 0 3px #fbbf24, 0 6px 16px rgba(0,0,0,0.3); }
+    .tile.shake { animation: shake 0.4s ease; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20% { transform: translateX(-4px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
+    }
+    .tile.falling { animation: fall 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    @keyframes fall {
+      from { transform: translateY(-100%); opacity: 0.8; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .tile.matched { animation: pop 0.3s ease forwards; pointer-events: none; }
+    @keyframes pop {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.9; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    .tile.bomb-hit { animation: bombFlash 0.4s ease; }
+    @keyframes bombFlash {
+      0% { transform: scale(1); filter: brightness(1); }
+      30% { transform: scale(1.3); filter: brightness(2); }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    .tile.line-clear { animation: lineFlash 0.25s ease; }
+    @keyframes lineFlash {
+      0% { filter: brightness(1); }
+      50% { filter: brightness(2.5); }
+      100% { opacity: 0; transform: scale(0.8); }
+    }
+    .float-score {
+      position: absolute;
+      font-weight: 700;
+      color: #fbbf24;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      animation: floatUp 0.8s ease-out forwards;
+      pointer-events: none;
+      z-index: 20;
+    }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-40px) scale(1.2); }
+    }
+    .bomb-falling {
+      position: absolute;
+      font-size: 28px;
+      animation: bombDrop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      z-index: 30;
+    }
+    @keyframes bombDrop {
+      from { transform: translateY(-200px) scale(0.5); opacity: 1; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .line-flash {
+      position: absolute;
+      left: 0; right: 0; top: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+      animation: lineFlashBg 0.4s ease;
+      pointer-events: none;
+      z-index: 15;
+    }
+    @keyframes lineFlashBg {
+      0% { opacity: 0; }
+      50% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    .line-explosion {
+      position: absolute;
+      pointer-events: none;
+      z-index: 25;
+      background: linear-gradient(90deg, transparent, rgba(255,200,0,0.9), rgba(255,100,0,0.95), rgba(255,200,0,0.9), transparent);
+      box-shadow: 0 0 20px 8px rgba(255,180,0,0.8);
+      animation: lineExplosion 0.5s ease-out forwards;
+    }
+    .line-explosion.v {
+      background: linear-gradient(180deg, transparent, rgba(255,200,0,0.9), rgba(255,100,0,0.95), rgba(255,200,0,0.9), transparent);
+    }
+    @keyframes lineExplosion {
+      0% { opacity: 1; transform: scale(0.3); filter: brightness(2); }
+      40% { opacity: 1; transform: scale(1.1); filter: brightness(1.5); }
+      100% { opacity: 0; transform: scale(1.2); filter: brightness(0); }
+    }
+    .explosion-particle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff 0%, #ffc107 40%, #ff6600 100%);
+      pointer-events: none;
+      z-index: 26;
+    }
+    .bomb-effect-panel.show {
+      animation: bombPanelIn 0.35s ease-out;
+    }
+    @keyframes bombPanelIn {
+      from { opacity: 0; transform: scale(0.8) translateX(10px); }
+      to { opacity: 1; transform: scale(1) translateX(0); }
+    }
+    .confetti {
+      position: fixed;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .score-bar-fill { transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .modal-overlay {
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-amber-100 via-orange-50 to-rose-100 flex flex-col items-center justify-center p-4">
+  <div id="app" class="w-full max-w-lg flex flex-col items-center gap-4">
+    <!-- Header -->
+    <header class="text-center">
+      <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-rose-500 drop-shadow-sm">Happy Match for Claudia</h1>
+      <p class="text-amber-700/80 text-sm mt-1">Cute Animal Kingdom</p>
+    </header>
+
+    <!-- HUD -->
+    <div class="w-full flex items-center justify-between gap-4">
+      <div class="flex-1">
+        <div class="flex justify-between text-sm text-amber-800 font-medium mb-1">
+          <span>Score</span>
+          <span id="scoreDisplay">0</span>
+        </div>
+        <div class="h-3 bg-amber-200/80 rounded-full overflow-hidden">
+          <div id="scoreBar" class="score-bar-fill h-full bg-gradient-to-r from-amber-500 to-rose-500 rounded-full" style="width: 0%"></div>
+        </div>
+        <p class="text-xs text-amber-700/70 mt-0.5">第 <span id="levelDisplay">1</span> 关 · 目标 <span id="goalDisplay">2000</span> 分</p>
+      </div>
+      <div class="flex flex-col items-center bg-white/60 rounded-xl px-4 py-2 shadow-md">
+        <span class="text-xs text-amber-700/80">Moves</span>
+        <span id="movesDisplay" class="text-xl font-bold text-amber-700">30</span>
+      </div>
+      <button id="showLeaderboardBtn" type="button" class="px-3 py-2 rounded-xl bg-amber-200/80 hover:bg-amber-300/80 text-amber-800 font-medium text-sm shadow">排行榜</button>
+    </div>
+
+    <!-- 棋盘（居中）+ 左侧炸弹特效 + 右侧规则说明 -->
+    <div class="flex items-stretch justify-center gap-3 w-full max-w-2xl">
+      <div class="flex-1 min-w-0 flex flex-col justify-center items-end" style="flex: 1 1 0;">
+        <div id="bombEffectPanel" class="hidden flex flex-col items-center justify-center rounded-2xl border-2 border-rose-200/80 bg-rose-50/95 shadow-xl p-3 w-[120px] bomb-effect-panel flex-shrink-0" style="min-height: calc(8 * var(--tile-size) + 7 * 4px);">
+          <img id="bombEffectImg" src="pig-bomb.png" alt="Pig" class="w-24 h-24 object-contain rounded-xl mb-2" onerror="this.style.display='none'; var s=this.nextElementSibling; if(s){s.classList.remove('hidden');}" />
+          <span id="bombEffectFallback" class="text-5xl mb-2 hidden">🐷</span>
+          <p class="text-lg font-bold text-rose-600 tracking-wide">OH！NO！</p>
+        </div>
+      </div>
+      <div class="relative rounded-2xl p-3 shadow-xl border-2 border-amber-200/80 flex-shrink-0" style="background: linear-gradient(135deg, #fef3c7 0%, #ffedd5 100%);">
+        <div id="board"></div>
+        <div id="floatContainer" class="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl"></div>
+      </div>
+      <div class="flex-1 min-w-0 flex flex-col justify-center items-start" style="flex: 1 1 0;">
+        <div class="flex flex-col justify-center p-3 min-w-[180px] max-w-[220px] text-amber-800 text-sm">
+          <p class="font-bold text-amber-700 mb-1.5">规则说明</p>
+          <p class="mb-1 leading-relaxed"><span class="font-semibold">4-match：</span>奖励炸弹一枚，随机炸掉一只猪和周边 3×3 格子。</p>
+          <p class="leading-relaxed"><span class="font-semibold">5-match：</span>奖励消除整行/整列。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 排行榜 (可点击按钮展开) -->
+    <div id="leaderboardPanel" class="hidden w-full bg-white/90 rounded-xl p-4 shadow-lg border-2 border-amber-200/60">
+      <h3 class="font-bold text-amber-800 mb-2">🏆 排行榜（最高分 · 用户名 · 结束时间）</h3>
+      <ul id="leaderboardList" class="space-y-2 text-amber-800 text-sm"></ul>
+      <p class="text-xs text-amber-600/80 mt-2">仅保留前 5 名</p>
+    </div>
+  </div>
+
+  <!-- Win Modal -->
+  <div id="winModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-2xl p-8 shadow-2xl max-w-sm mx-4 text-center border-2 border-amber-200">
+      <div class="text-5xl mb-2">🎉</div>
+      <h2 class="text-2xl font-bold text-amber-700">Level Up!</h2>
+      <p class="text-amber-600 mt-2" id="winMessage">You reached the goal!</p>
+      <div id="winLeaderboard" class="mt-4 text-left hidden">
+        <h3 class="font-bold text-amber-800 text-sm">🏆 Top 5</h3>
+        <ul id="winLeaderboardList" class="text-sm text-amber-700 space-y-0.5 mt-1"></ul>
+      </div>
+      <button id="winCloseBtn" class="mt-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold rounded-xl shadow-lg hover:opacity-90 transition">继续挑战</button>
+    </div>
+  </div>
+
+  <!-- Username Modal (new game) -->
+  <div id="usernameModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-8 shadow-2xl max-w-sm mx-4 text-center border-2 border-amber-200">
+      <h2 class="text-xl font-bold text-amber-700 mb-2">开始新游戏</h2>
+      <p class="text-amber-600 text-sm mb-4">请输入你的昵称</p>
+      <input type="text" id="usernameInput" maxlength="20" placeholder="昵称" class="w-full px-4 py-3 rounded-xl border-2 border-amber-200 focus:border-amber-500 outline-none mb-4 text-amber-800" />
+      <button id="usernameConfirmBtn" type="button" class="w-full px-6 py-3 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold rounded-xl shadow-lg hover:opacity-90 transition">开始游戏</button>
+    </div>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div id="gameOverModal" class="fixed inset-0 modal-overlay flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-2xl p-8 shadow-2xl max-w-sm mx-4 text-center border-2 border-amber-200">
+      <div class="text-5xl mb-2">😢</div>
+      <h2 class="text-2xl font-bold text-amber-700">Game Over</h2>
+      <p class="text-amber-600 mt-2">Out of moves!</p>
+      <p class="text-lg font-semibold text-amber-700 mt-2">累积积分：<span id="finalScore">0</span></p>
+      <button id="retryBtn" class="mt-6 px-6 py-3 bg-gradient-to-r from-amber-500 to-rose-500 text-white font-bold rounded-xl shadow-lg hover:opacity-90 transition">Retry</button>
+      <div id="leaderboardInModal" class="mt-4 text-left hidden">
+        <h3 class="font-bold text-amber-800 text-sm">🏆 排行榜</h3>
+        <ul id="leaderboardListModal" class="text-sm text-amber-700 space-y-1 mt-1"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const MAX_MOVES = 30;
+      const ROWS = 8;
+      const COLS = 8;
+      const ANIMALS = ['🐵', '🐮', '🐷', '🐯', '🐱'];
+      const SCORE_3 = 100;
+      const SCORE_4 = 500;
+      const SCORE_5 = 1000;
+      const COMBO_MULTIPLIER = 1.2;
+      function getTargetScore(level) { return 2000 + (level - 1) * 1000; }
+
+      const TILE_STYLES = {
+        '🐵': 'linear-gradient(145deg, #dcfce7 0%, #86efac 50%, #22c55e 100%)',
+        '🐮': 'linear-gradient(145deg, #fefce8 0%, #fef08a 50%, #eab308 100%)',
+        '🐷': 'linear-gradient(145deg, #fce7f3 0%, #f9a8d4 50%, #ec4899 100%)',
+        '🐯': 'linear-gradient(145deg, #ffedd5 0%, #fdba74 50%, #ea580c 100%)',
+        '🐱': 'linear-gradient(145deg, #f3e8ff 0%, #c4b5fd 50%, #7c3aed 100%)'
+      };
+
+      let board = [];
+      let score = 0;
+      let moves = MAX_MOVES;
+      let selectedCell = null;
+      let combo = 0;
+      let isProcessing = false;
+      let gameEnded = false;
+      let currentLevel = 1;
+      let currentUsername = '';
+      let cascadeRound = 0;
+      let hadBombInChain = false;
+      let totalGoalFromPassedLevels = 0;
+
+      const boardEl = document.getElementById('board');
+      const floatContainer = document.getElementById('floatContainer');
+      const scoreDisplay = document.getElementById('scoreDisplay');
+      const scoreBar = document.getElementById('scoreBar');
+      const goalDisplay = document.getElementById('goalDisplay');
+      const levelDisplay = document.getElementById('levelDisplay');
+      const movesDisplay = document.getElementById('movesDisplay');
+      const winModal = document.getElementById('winModal');
+      const gameOverModal = document.getElementById('gameOverModal');
+      const finalScoreEl = document.getElementById('finalScore');
+      const leaderboardPanel = document.getElementById('leaderboardPanel');
+      const leaderboardList = document.getElementById('leaderboardList');
+      const leaderboardInModal = document.getElementById('leaderboardInModal');
+      const leaderboardListModal = document.getElementById('leaderboardListModal');
+      const usernameModal = document.getElementById('usernameModal');
+      const usernameInput = document.getElementById('usernameInput');
+      const usernameConfirmBtn = document.getElementById('usernameConfirmBtn');
+      const showLeaderboardBtn = document.getElementById('showLeaderboardBtn');
+
+      // —— Web Audio SFX（延迟创建，避免 file:// 下报错导致脚本中断）——
+      let audioCtx = null;
+      function getAudioCtx() {
+        if (audioCtx) return audioCtx;
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {}
+        return audioCtx;
+      }
+      function beep(freq, duration, type) {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = type || 'sine';
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      function playMatch() {
+        beep(880, 0.08);
+        setTimeout(() => beep(1100, 0.06), 60);
+      }
+      function playBomb() {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(80, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.2);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.25);
+        } catch (e) {}
+      }
+      function playLineClear() {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(600, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.12, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.2);
+        } catch (e) {}
+      }
+
+      function getRandomAnimal() {
+        return ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+      }
+
+      function initBoard() {
+        board = [];
+        for (let r = 0; r < ROWS; r++) {
+          board[r] = [];
+          for (let c = 0; c < COLS; c++) {
+            let animal = getRandomAnimal();
+            while (hasMatchAt(r, c, animal)) animal = getRandomAnimal();
+            board[r][c] = animal;
+          }
+        }
+        renderBoard();
+      }
+
+      function hasMatchAt(r, c, animal) {
+        let h = 0, v = 0;
+        for (let i = c - 1; i >= 0 && board[r][i] === animal; i--) h++;
+        for (let i = c + 1; i < COLS && board[r][i] === animal; i++) h++;
+        if (h >= 2) return true;
+        for (let i = r - 1; i >= 0 && board[i] && board[i][c] === animal; i--) v++;
+        for (let i = r + 1; i < ROWS && board[i] && board[i][c] === animal; i++) v++;
+        return v >= 2;
+      }
+
+      function renderBoard(animateFall) {
+        boardEl.innerHTML = '';
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const animal = board[r][c];
+            const cell = document.createElement('div');
+            cell.className = 'tile border-2 border-amber-200/70';
+            cell.style.background = TILE_STYLES[animal] || TILE_STYLES['🐵'];
+            if (animateFall) cell.classList.add('falling');
+            cell.dataset.r = r;
+            cell.dataset.c = c;
+            cell.textContent = animal;
+            cell.addEventListener('click', () => onTileClick(r, c));
+            boardEl.appendChild(cell);
+            if (animateFall) setTimeout(() => cell.classList.remove('falling'), 350);
+          }
+        }
+      }
+
+      function getCellEl(r, c) {
+        return boardEl.querySelector(`[data-r="${r}"][data-c="${c}"]`);
+      }
+
+      function onTileClick(r, c) {
+        if (gameEnded || isProcessing) return;
+        const cellEl = getCellEl(r, c);
+        if (!cellEl) return;
+        cellEl.classList.add('shake');
+        setTimeout(() => cellEl.classList.remove('shake'), 400);
+        if (!selectedCell) {
+          selectedCell = { r, c };
+          cellEl.classList.add('selected');
+          return;
+        }
+        if (selectedCell.r === r && selectedCell.c === c) {
+          selectedCell = null;
+          cellEl.classList.remove('selected');
+          return;
+        }
+        const dr = Math.abs(selectedCell.r - r);
+        const dc = Math.abs(selectedCell.c - c);
+        if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
+          getCellEl(selectedCell.r, selectedCell.c).classList.remove('selected');
+          swapAndCheck(selectedCell.r, selectedCell.c, r, c);
+          selectedCell = null;
+        } else {
+          getCellEl(selectedCell.r, selectedCell.c).classList.remove('selected');
+          selectedCell = { r, c };
+          cellEl.classList.add('selected');
+        }
+      }
+
+      function swapAndCheck(r1, c1, r2, c2) {
+        isProcessing = true;
+        const a = board[r1][c1];
+        board[r1][c1] = board[r2][c2];
+        board[r2][c2] = a;
+        updateCell(r1, c1);
+        updateCell(r2, c2);
+        const matches = findAllMatches();
+        const hasMatch = matches[3].length > 0 || matches[4].length > 0 || matches[5].length > 0;
+        if (hasMatch) {
+          moves--;
+          movesDisplay.textContent = moves;
+          cascadeRound = 1;
+          hadBombInChain = false;
+          processMatches(matches);
+        } else {
+          board[r1][c1] = board[r2][c2];
+          board[r2][c2] = a;
+          updateCell(r1, c1);
+          updateCell(r2, c2);
+          isProcessing = false;
+        }
+      }
+
+      function findAllMatches() {
+        const set = new Set();
+        const byLength = { 3: [], 4: [], 5: [] };
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const animal = board[r][c];
+            if (!animal) continue;
+            let hr = 1, hc = c;
+            while (hc > 0 && board[r][hc - 1] === animal) { hr++; hc--; }
+            let endC = c;
+            while (endC + 1 < COLS && board[r][endC + 1] === animal) { endC++; hr++; }
+            if (hr >= 3) {
+              const cells = [];
+              for (let j = hc; j <= endC; j++) cells.push({ r, c: j });
+              const key = cells.map(x => `${x.r},${x.c}`).sort().join('|');
+              if (!set.has(key)) {
+                set.add(key);
+                if (hr >= 5) byLength[5].push({ cells, dir: 'h' });
+                else if (hr >= 4) byLength[4].push({ cells, dir: 'h' });
+                else byLength[3].push({ cells });
+              }
+            }
+            let vc = 1, vr = r;
+            while (vr > 0 && board[vr - 1][c] === animal) { vc++; vr--; }
+            let endR = r;
+            while (endR + 1 < ROWS && board[endR + 1][c] === animal) { endR++; vc++; }
+            if (vc >= 3) {
+              const cells = [];
+              for (let i = vr; i <= endR; i++) cells.push({ r: i, c });
+              const key = cells.map(x => `${x.r},${x.c}`).sort().join('|');
+              if (!set.has(key)) {
+                set.add(key);
+                if (vc >= 5) byLength[5].push({ cells, dir: 'v' });
+                else if (vc >= 4) byLength[4].push({ cells, dir: 'v' });
+                else byLength[3].push({ cells });
+              }
+            }
+          }
+        }
+        return byLength;
+      }
+
+      function processMatches(byLength) {
+        const allToRemove = new Set();
+        let points = 0;
+        let is4 = false;
+        let is5 = false;
+        const pigCells = [];
+
+        if (byLength[5].length > 0) {
+          is5 = true;
+          for (const { cells, dir } of byLength[5]) {
+            points += SCORE_5;
+            if (dir === 'h') {
+              const row = cells[0].r;
+              for (let j = 0; j < COLS; j++) allToRemove.add(`${row},${j}`);
+            } else {
+              const col = cells[0].c;
+              for (let i = 0; i < ROWS; i++) allToRemove.add(`${i},${col}`);
+            }
+          }
+        }
+        if (byLength[4].length > 0) {
+          is4 = true;
+          hadBombInChain = true;
+          for (const { cells } of byLength[4]) {
+            cells.forEach(({ r, c }) => allToRemove.add(`${r},${c}`));
+            points += SCORE_4;
+          }
+          for (let r = 0; r < ROWS; r++)
+            for (let c = 0; c < COLS; c++)
+              if (board[r][c] === '🐷') pigCells.push({ r, c });
+        }
+        let bombPig = null;
+        if (is4 && pigCells.length > 0) {
+          bombPig = pigCells[Math.floor(Math.random() * pigCells.length)];
+          for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++) {
+              const nr = bombPig.r + dr, nc = bombPig.c + dc;
+              if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) allToRemove.add(`${nr},${nc}`);
+            }
+        }
+        for (const { cells } of byLength[3]) {
+          let add = true;
+          for (const { r, c } of cells) {
+            if (allToRemove.has(`${r},${c}`)) { add = false; break; }
+          }
+          if (add) {
+            cells.forEach(({ r, c }) => allToRemove.add(`${r},${c}`));
+            points += SCORE_3;
+          }
+        }
+
+        const mult = Math.pow(COMBO_MULTIPLIER, combo);
+        const total = Math.round(points * mult);
+        combo++;
+
+        if (is5) playLineClear();
+        else if (is4) playBomb();
+        else playMatch();
+
+        const toRemove = Array.from(allToRemove).map(s => {
+          const [r, c] = s.split(',').map(Number);
+          return { r, c };
+        });
+
+        toRemove.forEach(({ r, c }) => {
+          const el = getCellEl(r, c);
+          if (!el) return;
+          if (is5) el.classList.add('line-clear');
+          else if (is4) el.classList.add('bomb-hit');
+          else el.classList.add('matched');
+        });
+
+        addScore(total);
+        showFloatingScore(total);
+        if (is4 && bombPig) showBombEffect(bombPig);
+        if (is5 && byLength[5].length > 0) showLineFlash(byLength[5][0]);
+
+        setTimeout(() => {
+          toRemove.forEach(({ r, c }) => { board[r][c] = null; });
+          applyGravity();
+        }, is5 ? 280 : is4 ? 380 : 300);
+      }
+
+      function showFloatingScore(value) {
+        const el = document.createElement('div');
+        el.className = 'float-score';
+        el.textContent = `+${value}`;
+        el.style.left = '50%';
+        el.style.top = '40%';
+        el.style.transform = 'translate(-50%, 0)';
+        floatContainer.appendChild(el);
+        setTimeout(() => el.remove(), 800);
+      }
+
+      function showBombEffect(pigCell) {
+        const cellEl = getCellEl(pigCell.r, pigCell.c);
+        if (cellEl) {
+          const cellRect = cellEl.getBoundingClientRect();
+          const bomb = document.createElement('div');
+          bomb.className = 'bomb-falling';
+          bomb.textContent = '💣';
+          bomb.style.position = 'fixed';
+          bomb.style.left = cellRect.left + cellRect.width / 2 - 14 + 'px';
+          bomb.style.top = cellRect.top - 30 + 'px';
+          document.body.appendChild(bomb);
+          setTimeout(() => bomb.remove(), 650);
+        }
+        const panel = document.getElementById('bombEffectPanel');
+        if (panel) {
+          panel.classList.remove('hidden');
+          panel.classList.add('show');
+          setTimeout(() => {
+            panel.classList.remove('show');
+            panel.classList.add('hidden');
+          }, 2000);
+        }
+      }
+
+      function showLineFlash(match5) {
+        const flash = document.createElement('div');
+        flash.className = 'line-flash';
+        flash.style.position = 'absolute';
+        flash.style.borderRadius = 'inherit';
+        boardEl.parentElement.appendChild(flash);
+        setTimeout(() => flash.remove(), 450);
+        showLineExplosion(match5);
+      }
+
+      function showLineExplosion(match5) {
+        const dir = match5.dir;
+        const r = match5.cells[0].r;
+        const c = match5.cells[0].c;
+        const boardParent = boardEl.parentElement;
+        const rect = boardEl.getBoundingClientRect();
+        const tileSize = (rect.width - 7 * 4) / 8;
+        const gap = 4;
+        const ox = boardEl.offsetLeft || 0;
+        const oy = boardEl.offsetTop || 0;
+        const lineEl = document.createElement('div');
+        lineEl.className = 'line-explosion ' + (dir === 'v' ? 'v' : '');
+        lineEl.style.borderRadius = '8px';
+        lineEl.style.position = 'absolute';
+        if (dir === 'h') {
+          lineEl.style.left = ox + 'px';
+          lineEl.style.top = (oy + r * (tileSize + gap) + gap) + 'px';
+          lineEl.style.width = rect.width + 'px';
+          lineEl.style.height = (tileSize - 2) + 'px';
+        } else {
+          lineEl.style.left = (ox + c * (tileSize + gap) + gap) + 'px';
+          lineEl.style.top = oy + 'px';
+          lineEl.style.width = (tileSize - 2) + 'px';
+          lineEl.style.height = rect.height + 'px';
+        }
+        boardParent.appendChild(lineEl);
+        setTimeout(() => lineEl.remove(), 520);
+        const n = dir === 'h' ? 12 : 10;
+        for (let i = 0; i < n; i++) {
+          const p = document.createElement('div');
+          p.className = 'explosion-particle';
+          if (dir === 'h') {
+            p.style.left = (ox + (rect.width * (i + 0.5) / n) - 3 + Math.random() * 10) + 'px';
+            p.style.top = (oy + r * (tileSize + gap) + tileSize / 2 - 3) + 'px';
+          } else {
+            p.style.left = (ox + c * (tileSize + gap) + tileSize / 2 - 3) + 'px';
+            p.style.top = (oy + (rect.height * (i + 0.5) / n) - 3 + Math.random() * 8) + 'px';
+          }
+          p.style.position = 'absolute';
+          boardParent.appendChild(p);
+          setTimeout(() => {
+            p.style.transition = 'opacity 0.2s, transform 0.2s';
+            p.style.opacity = '0';
+            p.style.transform = 'scale(2)';
+            setTimeout(() => p.remove(), 250);
+          }, 180 + i * 22);
+        }
+      }
+
+      function applyGravity() {
+        for (let c = 0; c < COLS; c++) {
+          let write = ROWS - 1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (board[r][c] !== null) {
+              if (write !== r) {
+                board[write][c] = board[r][c];
+                board[r][c] = null;
+              }
+              write--;
+            }
+          }
+          while (write >= 0) {
+            board[write][c] = getRandomAnimal();
+            write--;
+          }
+        }
+        renderBoard(true);
+        setTimeout(() => {
+          const next = findAllMatches();
+          const hasAny = next[3].length > 0 || next[4].length > 0 || next[5].length > 0;
+          if (hasAny) {
+            cascadeRound++;
+            processMatches(next);
+          } else {
+            if (cascadeRound >= 3 && !hadBombInChain) playGoodSound();
+            combo = 0;
+            isProcessing = false;
+            checkWinLose();
+          }
+        }, 380);
+      }
+
+      function playGoodSound() {
+        try {
+          const u = new SpeechSynthesisUtterance('Good!');
+          u.lang = 'en-US';
+          u.rate = 0.9;
+          u.pitch = 1.1;
+          speechSynthesis.speak(u);
+        } catch (e) {}
+      }
+
+      function updateCell(r, c) {
+        const el = getCellEl(r, c);
+        if (!el) return;
+        const animal = board[r][c];
+        el.textContent = animal;
+        el.style.background = TILE_STYLES[animal] || TILE_STYLES['🐵'];
+      }
+
+      function addScore(value) {
+        score += value;
+        scoreDisplay.textContent = score;
+        const target = getTargetScore(currentLevel);
+        const pct = Math.min(100, (score / target) * 100);
+        scoreBar.style.width = pct + '%';
+      }
+
+      function checkWinLose() {
+        const target = getTargetScore(currentLevel);
+        if (score >= target) {
+          gameEnded = true;
+          addScore(0);
+          showConfetti();
+          showWinLeaderboard();
+          document.getElementById('winMessage').textContent = '本关目标 ' + target + ' 分已达成！';
+          winModal.classList.remove('hidden');
+        } else if (moves <= 0 && score < target) {
+          // 挑战失败：剩余步数=0 且 未达到通过 goal，记入排行榜（累积积分）
+          gameEnded = true;
+          const cumulativeScore = totalGoalFromPassedLevels + score;
+          finalScoreEl.textContent = cumulativeScore;
+          saveLeaderboard(cumulativeScore);
+          showLeaderboardInModal();
+          gameOverModal.classList.remove('hidden');
+        }
+      }
+
+      function showConfetti() {
+        const colors = ['#f59e0b', '#f97316', '#fb7185', '#fbbf24', '#34d399'];
+        for (let i = 0; i < 50; i++) {
+          setTimeout(() => {
+            const c = document.createElement('div');
+            c.className = 'confetti';
+            c.style.left = Math.random() * 100 + 'vw';
+            c.style.top = '-10px';
+            c.style.background = colors[Math.floor(Math.random() * colors.length)];
+            c.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+            c.style.transform = `rotate(${Math.random() * 360}deg)`;
+            document.body.appendChild(c);
+            c.animate(
+              { transform: `translateY(100vh) rotate(${Math.random() * 720}deg)`, opacity: 0 },
+              { duration: 2000 + Math.random() * 1000, fill: 'forwards' }
+            ).finished.then(() => c.remove());
+          }, i * 40);
+        }
+      }
+
+      function formatTime(ts) {
+        const d = new Date(ts);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      }
+
+      function saveLeaderboard(s) {
+        let list = JSON.parse(localStorage.getItem('happyMatchLeaderboard') || '[]');
+        list.push({ score: s, username: currentUsername || '玩家', date: Date.now() });
+        list.sort((a, b) => b.score - a.score);
+        list = list.slice(0, 5);
+        localStorage.setItem('happyMatchLeaderboard', JSON.stringify(list));
+      }
+
+      function renderLeaderboardList(ulEl) {
+        const list = JSON.parse(localStorage.getItem('happyMatchLeaderboard') || '[]');
+        ulEl.innerHTML = list.length
+          ? list.map((e, i) => `<li>${i + 1}. ${e.username || '玩家'} · ${e.score} 分 · ${formatTime(e.date)}</li>`).join('')
+          : '<li class="text-amber-600/80">暂无记录</li>';
+      }
+
+      function showLeaderboard() {
+        renderLeaderboardList(leaderboardList);
+        leaderboardPanel.classList.remove('hidden');
+      }
+
+      function showLeaderboardInModal() {
+        renderLeaderboardList(leaderboardListModal);
+        leaderboardInModal.classList.remove('hidden');
+      }
+
+      function showWinLeaderboard() {
+        const ul = document.getElementById('winLeaderboardList');
+        const panel = document.getElementById('winLeaderboard');
+        if (ul && panel) {
+          renderLeaderboardList(ul);
+          panel.classList.remove('hidden');
+        }
+      }
+
+      winModal.querySelector('#winCloseBtn').addEventListener('click', () => {
+        winModal.classList.add('hidden');
+        document.getElementById('winLeaderboard').classList.add('hidden');
+        totalGoalFromPassedLevels += getTargetScore(currentLevel);
+        currentLevel++;
+        resetGame(false);
+      });
+      gameOverModal.querySelector('#retryBtn').addEventListener('click', () => {
+        gameOverModal.classList.add('hidden');
+        leaderboardInModal.classList.add('hidden');
+        resetGame(false);
+      });
+
+      showLeaderboardBtn.addEventListener('click', function () {
+        if (leaderboardPanel.classList.contains('hidden')) {
+          showLeaderboard();
+        } else {
+          leaderboardPanel.classList.add('hidden');
+        }
+      });
+
+      usernameConfirmBtn.addEventListener('click', function () {
+        const name = (usernameInput.value || '').trim();
+        if (!name) return;
+        currentUsername = name.slice(0, 20);
+        usernameModal.classList.add('hidden');
+        startGame();
+      });
+      usernameInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') usernameConfirmBtn.click();
+      });
+
+      function resetGame(askName) {
+        score = 0;
+        moves = MAX_MOVES;
+        combo = 0;
+        gameEnded = false;
+        isProcessing = false;
+        selectedCell = null;
+        if (askName) totalGoalFromPassedLevels = 0;
+        const target = getTargetScore(currentLevel);
+        if (levelDisplay) levelDisplay.textContent = currentLevel;
+        goalDisplay.textContent = target;
+        scoreDisplay.textContent = '0';
+        scoreBar.style.width = '0%';
+        movesDisplay.textContent = moves;
+        leaderboardPanel.classList.add('hidden');
+        if (askName) {
+          usernameInput.value = currentUsername;
+          usernameModal.classList.remove('hidden');
+          return;
+        }
+        initBoard();
+      }
+
+      function startGame() {
+        if (!boardEl) return;
+        try {
+          if (levelDisplay) levelDisplay.textContent = currentLevel;
+          goalDisplay.textContent = getTargetScore(currentLevel);
+          initBoard();
+        } catch (err) {
+          console.error('Happy Match init error:', err);
+        }
+      }
+
+      function showNameAndStart() {
+        usernameInput.value = '';
+        usernameModal.classList.remove('hidden');
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+          if (!boardEl) return;
+          if (levelDisplay) levelDisplay.textContent = '1';
+          goalDisplay.textContent = getTargetScore(1);
+          showNameAndStart();
+        });
+      } else {
+        if (levelDisplay) levelDisplay.textContent = '1';
+        goalDisplay.textContent = getTargetScore(1);
+        setTimeout(showNameAndStart, 0);
+      }
+    })();
+  </script>
+</body>
+</html>
