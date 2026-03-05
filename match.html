@@ -564,12 +564,12 @@
             for (let c = 0; c < COLS; c++)
               if (board[r][c] === '🐷') pigCells.push({ r, c });
         }
-        let bombPig = null;
+        let bombCenter = null;
         if (is4 && pigCells.length > 0) {
-          bombPig = pigCells[Math.floor(Math.random() * pigCells.length)];
+          bombCenter = pigCells[Math.floor(Math.random() * pigCells.length)];
           for (let dr = -1; dr <= 1; dr++)
             for (let dc = -1; dc <= 1; dc++) {
-              const nr = bombPig.r + dr, nc = bombPig.c + dc;
+              const nr = bombCenter.r + dr, nc = bombCenter.c + dc;
               if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) allToRemove.add(`${nr},${nc}`);
             }
         }
@@ -584,7 +584,7 @@
         combo++;
 
         if (is5) playLineClear();
-        else if (is4) playBomb();
+        else if (is4 && bombCenter) playBomb();
         else playMatch();
 
         const toRemove = Array.from(allToRemove).map(s => {
@@ -596,13 +596,13 @@
           const el = getCellEl(r, c);
           if (!el) return;
           if (is5) el.classList.add('line-clear');
-          else if (is4) el.classList.add('bomb-hit');
+          else if (is4 && bombCenter) el.classList.add('bomb-hit');
           else el.classList.add('matched');
         });
 
         addScore(total);
         showFloatingScore(total);
-        if (is4 && bombPig) showBombEffect(bombPig);
+        if (is4 && bombCenter) showBombEffect(bombCenter);
         if (is5 && byLength[5].length > 0) showLineFlash(byLength[5][0]);
 
         setTimeout(() => {
