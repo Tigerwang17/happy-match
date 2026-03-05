@@ -304,12 +304,23 @@
 
       // —— Web Audio SFX（延迟创建，避免 file:// 下报错导致脚本中断）——
       let audioCtx = null;
+      let audioUnlocked = false;
       function getAudioCtx() {
         if (audioCtx) return audioCtx;
         try {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         } catch (e) {}
         return audioCtx;
+      }
+      function unlockAudio() {
+        if (audioUnlocked) return;
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') {
+          ctx.resume().then(() => { audioUnlocked = true; }).catch(() => {});
+        } else {
+          audioUnlocked = true;
+        }
       }
       function beep(freq, duration, type) {
         const ctx = getAudioCtx();
@@ -417,6 +428,7 @@
       }
 
       function onTileClick(r, c) {
+        unlockAudio();
         if (gameEnded || isProcessing) return;
         const cellEl = getCellEl(r, c);
         if (!cellEl) return;
@@ -848,6 +860,7 @@
       });
 
       usernameConfirmBtn.addEventListener('click', function () {
+        unlockAudio();
         const name = (usernameInput.value || '').trim();
         if (!name) return;
         currentUsername = name.slice(0, 20);
