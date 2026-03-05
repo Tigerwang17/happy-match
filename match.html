@@ -342,6 +342,14 @@
         beep(880, 0.08);
         setTimeout(() => beep(1100, 0.06), 60);
       }
+      function playInvalidSwapSound() {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        try {
+          beep(180, 0.1, 'sawtooth');
+          setTimeout(() => beep(150, 0.08, 'sawtooth'), 80);
+        } catch (e) {}
+      }
       function playBomb() {
         const ctx = getAudioCtx();
         if (!ctx) return;
@@ -460,7 +468,8 @@
       function swapAndCheck(r1, c1, r2, c2) {
         isProcessing = true;
         const a = board[r1][c1];
-        board[r1][c1] = board[r2][c2];
+        const b = board[r2][c2];
+        board[r1][c1] = b;
         board[r2][c2] = a;
         updateCell(r1, c1);
         updateCell(r2, c2);
@@ -473,10 +482,11 @@
           hadBombInChain = false;
           processMatches(matches);
         } else {
-          board[r1][c1] = board[r2][c2];
-          board[r2][c2] = a;
+          board[r1][c1] = a;
+          board[r2][c2] = b;
           updateCell(r1, c1);
           updateCell(r2, c2);
+          playInvalidSwapSound();
           isProcessing = false;
         }
       }
